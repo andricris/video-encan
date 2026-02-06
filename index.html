@@ -40,8 +40,15 @@ button{
 }
 button:disabled{background:#475569}
 progress{width:100%;height:18px;margin-top:14px}
+progress:disabled{opacity:0.6}
 video{width:100%;margin-top:15px;border-radius:10px}
 small{color:#94a3b8}
+.status{
+  margin-top:10px;
+  font-size:0.95rem;
+  color:#cbd5f5;
+  min-height:1.2em;
+}
 </style>
 </head>
 
@@ -53,6 +60,7 @@ small{color:#94a3b8}
 <input type="file" id="videoInput" accept="video/*" />
 <button id="processBtn">🔧 Proses Video</button>
 <progress id="progress" value="0" max="100"></progress>
+<div id="status" class="status"></div>
 
 <video id="preview" controls></video>
 <a id="download" style="display:none">
@@ -70,39 +78,71 @@ const ffmpeg = new FFmpeg();
 const progress = document.getElementById("progress");
 const preview = document.getElementById("preview");
 const download = document.getElementById("download");
+const statusEl = document.getElementById("status");
+const processBtn = document.getElementById("processBtn");
+let ffmpegLoaded = false;
+
+const updateStatus = (message) => {
+  statusEl.textContent = message;
+};
+
+const setProcessingState = (isProcessing) => {
+  processBtn.disabled = isProcessing;
+  progress.disabled = !isProcessing;
+};
 
 ffmpeg.on("progress", p => {
   progress.value = Math.round(p.progress * 100);
+  if (p.progress > 0 && p.progress < 1) {
+    updateStatus(`Memproses video... ${progress.value}%`);
+  }
 });
 
-document.getElementById("processBtn").onclick = async () => {
+processBtn.onclick = async () => {
   const file = document.getElementById("videoInput").files[0];
   if (!file) return alert("Upload video dulu");
 
   progress.value = 0;
+  updateStatus("Menyiapkan proses...");
   download.style.display = "none";
+  setProcessingState(true);
 
-  await ffmpeg.load({
-    coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js"
-  });
+  try {
+    if (!ffmpegLoaded) {
+      updateStatus("Memuat mesin pemrosesan (FFmpeg)...");
+      await ffmpeg.load({
+        coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js"
+      });
+      ffmpegLoaded = true;
+    }
 
-  await ffmpeg.writeFile("input.mp4", await FFmpegWASM.fetchFile(file));
+    updateStatus("Menyalin file ke memori...");
+    await ffmpeg.writeFile("input.mp4", await FFmpegWASM.fetchFile(file));
 
-  await ffmpeg.exec([
-    "-i", "input.mp4",
-    "-vf",
-    "unsharp=5:5:1.4,eq=contrast=1.25:brightness=0.05:saturation=1.15",
-    "-c:a", "copy",
-    "output.mp4"
-  ]);
+    updateStatus("Memproses video... 0%");
+    await ffmpeg.exec([
+      "-i", "input.mp4",
+      "-vf",
+      "unsharp=5:5:1.4,eq=contrast=1.25:brightness=0.05:saturation=1.15",
+      "-c:a", "copy",
+      "output.mp4"
+    ]);
 
-  const data = await ffmpeg.readFile("output.mp4");
-  const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
+    updateStatus("Menyusun hasil...");
+    const data = await ffmpeg.readFile("output.mp4");
+    const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
 
-  preview.src = url;
-  download.href = url;
-  download.download = "video_jelas.mp4";
-  download.style.display = "block";
+    preview.src = url;
+    download.href = url;
+    download.download = "video_jelas.mp4";
+    download.style.display = "block";
+    updateStatus("Selesai! Silakan download hasilnya.");
+  } catch (error) {
+    console.error(error);
+    updateStatus("Gagal memproses video. Coba ulangi atau gunakan file yang lebih kecil.");
+  } finally {
+    setProcessingState(false);
+  }
 };
 </script>
 </body>
