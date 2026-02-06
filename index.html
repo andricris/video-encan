@@ -49,6 +49,9 @@ small{color:#94a3b8}
   color:#cbd5f5;
   min-height:1.2em;
 }
+.status.error{
+  color:#fca5a5;
+}
 </style>
 </head>
 
@@ -73,17 +76,18 @@ small{color:#94a3b8}
 </div>
 
 <script>
-const { FFmpeg } = FFmpegWASM;
-const ffmpeg = new FFmpeg();
+const statusEl = document.getElementById("status");
+const processBtn = document.getElementById("processBtn");
+const hasFFmpeg = typeof FFmpegWASM !== "undefined";
+const ffmpeg = hasFFmpeg ? new FFmpegWASM.FFmpeg() : null;
 const progress = document.getElementById("progress");
 const preview = document.getElementById("preview");
 const download = document.getElementById("download");
-const statusEl = document.getElementById("status");
-const processBtn = document.getElementById("processBtn");
 let ffmpegLoaded = false;
 
-const updateStatus = (message) => {
+const updateStatus = (message, isError = false) => {
   statusEl.textContent = message;
+  statusEl.classList.toggle("error", isError);
 };
 
 const setProcessingState = (isProcessing) => {
@@ -91,16 +95,31 @@ const setProcessingState = (isProcessing) => {
   progress.disabled = !isProcessing;
 };
 
-ffmpeg.on("progress", p => {
-  progress.value = Math.round(p.progress * 100);
-  if (p.progress > 0 && p.progress < 1) {
-    updateStatus(`Memproses video... ${progress.value}%`);
-  }
-});
+updateStatus("Siap memproses video.");
+setProcessingState(false);
+
+if (!hasFFmpeg) {
+  updateStatus("Gagal memuat library FFmpeg. Coba refresh halaman.", true);
+} else {
+  ffmpeg.on("progress", p => {
+    progress.value = Math.round(p.progress * 100);
+    if (p.progress > 0 && p.progress < 1) {
+      updateStatus(`Memproses video... ${progress.value}%`);
+    }
+  });
+}
 
 processBtn.onclick = async () => {
+  if (!hasFFmpeg) {
+    updateStatus("FFmpeg belum siap. Coba refresh halaman.", true);
+    return;
+  }
+
   const file = document.getElementById("videoInput").files[0];
-  if (!file) return alert("Upload video dulu");
+  if (!file) {
+    updateStatus("Pilih file video dulu.", true);
+    return;
+  }
 
   progress.value = 0;
   updateStatus("Menyiapkan proses...");
@@ -111,7 +130,8 @@ processBtn.onclick = async () => {
     if (!ffmpegLoaded) {
       updateStatus("Memuat mesin pemrosesan (FFmpeg)...");
       await ffmpeg.load({
-        coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js"
+        coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js",
+        wasmURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm"
       });
       ffmpegLoaded = true;
     }
