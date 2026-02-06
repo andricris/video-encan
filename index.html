@@ -78,8 +78,9 @@ small{color:#94a3b8}
 <script>
 const statusEl = document.getElementById("status");
 const processBtn = document.getElementById("processBtn");
-const hasFFmpeg = typeof FFmpegWASM !== "undefined";
-const ffmpeg = hasFFmpeg ? new FFmpegWASM.FFmpeg() : null;
+const ffmpegApi = window.FFmpegWASM || window.FFmpeg || null;
+const hasFFmpeg = Boolean(ffmpegApi && ffmpegApi.FFmpeg);
+const ffmpeg = hasFFmpeg ? new ffmpegApi.FFmpeg() : null;
 const progress = document.getElementById("progress");
 const preview = document.getElementById("preview");
 const download = document.getElementById("download");
@@ -99,7 +100,7 @@ updateStatus("Siap memproses video.");
 setProcessingState(false);
 
 if (!hasFFmpeg) {
-  updateStatus("Gagal memuat library FFmpeg. Coba refresh halaman.", true);
+  updateStatus("Gagal memuat library FFmpeg. Pastikan koneksi stabil lalu refresh.", true);
 } else {
   ffmpeg.on("progress", p => {
     progress.value = Math.round(p.progress * 100);
@@ -137,7 +138,7 @@ processBtn.onclick = async () => {
     }
 
     updateStatus("Menyalin file ke memori...");
-    await ffmpeg.writeFile("input.mp4", await FFmpegWASM.fetchFile(file));
+    await ffmpeg.writeFile("input.mp4", await ffmpegApi.fetchFile(file));
 
     updateStatus("Memproses video... 0%");
     await ffmpeg.exec([
