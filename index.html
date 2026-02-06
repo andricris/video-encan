@@ -40,8 +40,18 @@ button{
 }
 button:disabled{background:#475569}
 progress{width:100%;height:18px;margin-top:14px}
+progress:disabled{opacity:0.6}
 video{width:100%;margin-top:15px;border-radius:10px}
 small{color:#94a3b8}
+.status{
+  margin-top:10px;
+  font-size:0.95rem;
+  color:#cbd5f5;
+  min-height:1.2em;
+}
+.status.error{
+  color:#fca5a5;
+}
 </style>
 </head>
 
@@ -53,6 +63,7 @@ small{color:#94a3b8}
 <input type="file" id="videoInput" accept="video/*" />
 <button id="processBtn">🔧 Proses Video</button>
 <progress id="progress" value="0" max="100"></progress>
+<div id="status" class="status"></div>
 
 <video id="preview" controls></video>
 <a id="download" style="display:none">
@@ -65,44 +76,94 @@ small{color:#94a3b8}
 </div>
 
 <script>
-const { FFmpeg } = FFmpegWASM;
-const ffmpeg = new FFmpeg();
+const statusEl = document.getElementById("status");
+const processBtn = document.getElementById("processBtn");
+const ffmpegApi = window.FFmpegWASM || window.FFmpeg || null;
+const hasFFmpeg = Boolean(ffmpegApi && ffmpegApi.FFmpeg);
+const ffmpeg = hasFFmpeg ? new ffmpegApi.FFmpeg() : null;
 const progress = document.getElementById("progress");
 const preview = document.getElementById("preview");
 const download = document.getElementById("download");
+let ffmpegLoaded = false;
 
-ffmpeg.on("progress", p => {
-  progress.value = Math.round(p.progress * 100);
-});
+const updateStatus = (message, isError = false) => {
+  statusEl.textContent = message;
+  statusEl.classList.toggle("error", isError);
+};
 
-document.getElementById("processBtn").onclick = async () => {
+const setProcessingState = (isProcessing) => {
+  processBtn.disabled = isProcessing;
+  progress.disabled = !isProcessing;
+};
+
+updateStatus("Siap memproses video.");
+setProcessingState(false);
+
+if (!hasFFmpeg) {
+  updateStatus("Gagal memuat library FFmpeg. Pastikan koneksi stabil lalu refresh.", true);
+} else {
+  ffmpeg.on("progress", p => {
+    progress.value = Math.round(p.progress * 100);
+    if (p.progress > 0 && p.progress < 1) {
+      updateStatus(`Memproses video... ${progress.value}%`);
+    }
+  });
+}
+
+processBtn.onclick = async () => {
+  if (!hasFFmpeg) {
+    updateStatus("FFmpeg belum siap. Coba refresh halaman.", true);
+    return;
+  }
+
   const file = document.getElementById("videoInput").files[0];
-  if (!file) return alert("Upload video dulu");
+  if (!file) {
+    updateStatus("Pilih file video dulu.", true);
+    return;
+  }
 
   progress.value = 0;
+  updateStatus("Menyiapkan proses...");
   download.style.display = "none";
+  setProcessingState(true);
 
-  await ffmpeg.load({
-    coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js"
-  });
+  try {
+    if (!ffmpegLoaded) {
+      updateStatus("Memuat mesin pemrosesan (FFmpeg)...");
+      await ffmpeg.load({
+        coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js",
+        wasmURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm"
+      });
+      ffmpegLoaded = true;
+    }
 
-  await ffmpeg.writeFile("input.mp4", await FFmpegWASM.fetchFile(file));
+    updateStatus("Menyalin file ke memori...");
+    await ffmpeg.writeFile("input.mp4", await ffmpegApi.fetchFile(file));
 
-  await ffmpeg.exec([
-    "-i", "input.mp4",
-    "-vf",
-    "unsharp=5:5:1.4,eq=contrast=1.25:brightness=0.05:saturation=1.15",
-    "-c:a", "copy",
-    "output.mp4"
-  ]);
+    updateStatus("Memproses video... 0%");
+    await ffmpeg.exec([
+      "-i", "input.mp4",
+      "-vf",
+      "unsharp=5:5:1.4,eq=contrast=1.25:brightness=0.05:saturation=1.15",
+      "-c:a", "copy",
+      "output.mp4"
+    ]);
 
-  const data = await ffmpeg.readFile("output.mp4");
-  const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
+    updateStatus("Menyusun hasil...");
+    const data = await ffmpeg.readFile("output.mp4");
+    const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
 
-  preview.src = url;
-  download.href = url;
-  download.download = "video_jelas.mp4";
-  download.style.display = "block";
+    preview.src = url;
+    download.href = url;
+    download.download = "video_jelas.mp4";
+    download.style.display = "block";
+    updateStatus("Selesai! Silakan download hasilnya.");
+  } catch (error) {
+    console.error(error);
+    updateStatus("Gagal memproses video. Coba ulangi atau gunakan file yang lebih kecil.");
+  } finally {
+    setProcessingState(false);
+  }
 };
 </script>
 </body>
