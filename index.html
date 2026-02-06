@@ -78,9 +78,8 @@ small{color:#94a3b8}
 <script>
 const statusEl = document.getElementById("status");
 const processBtn = document.getElementById("processBtn");
-const ffmpegApi = window.FFmpegWASM || window.FFmpeg || null;
-const hasFFmpeg = Boolean(ffmpegApi && ffmpegApi.FFmpeg);
-const ffmpeg = hasFFmpeg ? new ffmpegApi.FFmpeg() : null;
+let ffmpegApi = window.FFmpegWASM || window.FFmpeg || null;
+let ffmpeg = null;
 const progress = document.getElementById("progress");
 const preview = document.getElementById("preview");
 const download = document.getElementById("download");
@@ -99,23 +98,33 @@ const setProcessingState = (isProcessing) => {
 updateStatus("Siap memproses video.");
 setProcessingState(false);
 
-if (!hasFFmpeg) {
-  updateStatus("Gagal memuat library FFmpeg. Pastikan koneksi stabil lalu refresh.", true);
-} else {
+const attachProgressHandler = () => {
+  if (!ffmpeg) return;
   ffmpeg.on("progress", p => {
     progress.value = Math.round(p.progress * 100);
     if (p.progress > 0 && p.progress < 1) {
       updateStatus(`Memproses video... ${progress.value}%`);
     }
   });
-}
+};
 
-processBtn.onclick = async () => {
-  if (!hasFFmpeg) {
-    updateStatus("FFmpeg belum siap. Coba refresh halaman.", true);
+const loadFFmpegScript = () => new Promise((resolve, reject) => {
+  if (ffmpegApi && ffmpegApi.FFmpeg) {
+    resolve();
     return;
   }
 
+  const script = document.createElement("script");
+  script.src = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/ffmpeg.min.js";
+  script.onload = () => {
+    ffmpegApi = window.FFmpegWASM || window.FFmpeg || null;
+    resolve();
+  };
+  script.onerror = () => reject(new Error("Gagal memuat FFmpeg"));
+  document.head.appendChild(script);
+});
+
+processBtn.onclick = async () => {
   const file = document.getElementById("videoInput").files[0];
   if (!file) {
     updateStatus("Pilih file video dulu.", true);
@@ -128,6 +137,21 @@ processBtn.onclick = async () => {
   setProcessingState(true);
 
   try {
+    if (!ffmpegApi || !ffmpegApi.FFmpeg) {
+      updateStatus("Memuat library FFmpeg...");
+      await loadFFmpegScript();
+    }
+
+    if (!ffmpegApi || !ffmpegApi.FFmpeg) {
+      updateStatus("Gagal memuat library FFmpeg. Pastikan koneksi stabil lalu refresh.", true);
+      return;
+    }
+
+    if (!ffmpeg) {
+      ffmpeg = new ffmpegApi.FFmpeg();
+      attachProgressHandler();
+    }
+
     if (!ffmpegLoaded) {
       updateStatus("Memuat mesin pemrosesan (FFmpeg)...");
       await ffmpeg.load({
